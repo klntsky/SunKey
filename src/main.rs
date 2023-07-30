@@ -29,7 +29,7 @@ pub struct Optic {
 
 impl Optic {
     fn step(&self) {
-        self.y.update(|y| y + 7);
+        self.y.update(|y| y + 1);
     }
 
     fn shift(&self, shift: i16) -> Optic {
@@ -101,14 +101,11 @@ const H: u16 = 600;
 const OPTIC_HEIGHT : u16 = 30;
 
 #[derive(Clone, Copy)]
-pub struct Screen {
-    area: [bool; W as usize]
-}
+struct Screen ([bool; W as usize]);
 
 impl Screen {
     fn compute(&self, opt: &Optic) -> Screen {
-        Screen{
-            area:
+        Screen(
             core::array::from_fn(
                 |i_usize|
                 {
@@ -119,24 +116,34 @@ impl Screen {
                         let rel_w = (i - opt.x_to) as f32 / opt.w_to as f32;
                         let rel_x: usize = (opt.x_from +
                                             (rel_w * opt.w_from as f32) as i16) as usize;
-                        self.area[rel_x % W as usize]
-                    } else { self.area[i_usize] }
+                        self.0[rel_x % W as usize]
+                    } else { self.0[i_usize] }
                 }
             )
-        }
+        )
     }
 
     fn draw(&self, y: i16, slim: bool) {
-        self.area.iter().enumerate().for_each(
-            |(i, flag)|
+        let mut last_flag : bool = self.0[0];
+        let mut first_cell : usize = 0;
 
-            if y <= H as i16 {
-                draw_rectangle(
-                    i as f32,
-                    0.0,
-                    1.0,
-                    if slim { y as f32 - 1.0 } else { y as f32 },
-                    if *flag { ORANGE } else { BLACK })
+        if y > H as i16 {
+            return;
+        }
+
+        self.0.iter().enumerate().for_each(
+            |(i, flag)| {
+                if (last_flag != *flag) {
+                    draw_rectangle(
+                        first_cell as f32,
+                        if slim { y as f32 - 1.0 } else { 0.0 },
+                        (i - first_cell) as f32,
+                        if slim { 1.0 } else { y as f32 },
+                        if *flag { ORANGE } else { BLACK }
+                    );
+                    first_cell = i;
+                    last_flag = *flag;
+                }
             }
         );
     }
@@ -156,7 +163,7 @@ async fn main() {
 
     let row_width = screen_width() / (W as f32);
 
-    let mut screen = Screen { area: [false; W as usize] };
+    let mut screen = Screen([false; W as usize]);
 
     let LINE_W = 10;
 
@@ -165,14 +172,16 @@ async fn main() {
         if i % LINE_W == 0 {
             s = prng.next_u32();
         }
-        screen.area[i as usize] = s % 2 == 1;
+        screen.0[i as usize] = s % 2 == 1;
     }
 
     let mut level1 = Level {
         optics: vec![
-            // Optic { x_from: 10, w_from: 400, x_to: 130, w_to: 100, y: Cell::new(-20) },
-            // Optic { x_from: 210, w_from: 100, x_to: 120, w_to: 400, y: Cell::new(-200) },
+            Optic { x_from: 10, w_from: 400, x_to: 130, w_to: 100, y: Cell::new(-20) },
+            Optic { x_from: 210, w_from: 100, x_to: 120, w_to: 400, y: Cell::new(-200) },
             Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-400) },
+            Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-600) },
+            Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-900) },
         ]
     };
 
