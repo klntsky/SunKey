@@ -6,6 +6,7 @@ use std::cell::Cell;
 use rand_xoshiro::Xoshiro128StarStar;
 use rand_core::SeedableRng;
 use rand_core::RngCore;
+use macroquad::input::*;
 
 struct Game {
 
@@ -15,29 +16,60 @@ pub enum LevelName {
     L1 = 0,
 }
 
-#[derive(PartialEq,Eq,Debug)]
+#[derive(PartialEq,Eq,Debug,Clone)]
 pub struct Optic {
-    x_from: u16,
-    w_from: u16,
-    x_to: u16,
-    w_to: u16,
-    y: Cell<i16>
+    x_from: i16,
+    w_from: i16,
+    x_to: i16,
+    w_to: i16,
+    y: Cell<i16>,
 }
 
 impl Optic {
     fn step(&self) {
-        self.y.update(|y| y + 1);
+        self.y.update(|y| y + 7);
+    }
+
+    fn shift(&self, shift: i16) -> Optic {
+        Optic {
+            x_from: self.x_from + shift,
+            x_to: self.x_to + shift,
+            w_from: self.w_from,
+            w_to: self.w_to,
+            y: Cell::new(self.y.get())
+        }
     }
 
     fn get_relative(&self, progress_u: u16) -> Optic {
-        let progress = (progress_u as i16 % OPTIC_HEIGHT as i16);
+        let progress = progress_u as i16 % OPTIC_HEIGHT as i16;
         Optic { x_from: self.x_from,
                 w_from: self.w_from,
                 x_to:
-                  ( self.x_from as i16 + (self.x_to as i16 - self.x_from as i16) * progress / (OPTIC_HEIGHT - 1) as i16) as u16,
-                w_to: (self.w_from as i16 + (self.w_to as i16 - self.w_from as i16) * progress / (OPTIC_HEIGHT - 1) as i16) as u16,
+                  ( self.x_from + (self.x_to  - self.x_from) * progress / (OPTIC_HEIGHT - 1) as i16),
+                w_to: (self.w_from + (self.w_to - self.w_from) * progress / (OPTIC_HEIGHT - 1) as i16),
                 y: Cell::new(self.y.get() + progress_u as i16)
         }
+    }
+
+    fn draw(&self) {
+        draw_line(
+            self.x_to as f32,
+            self.y.get() as f32,
+            self.x_from as f32,
+            self.y.get() as f32 + OPTIC_HEIGHT as f32 ,
+            3.0,
+            RED
+        );
+
+        draw_line(
+            (self.x_to + self.w_to) as f32,
+            self.y.get() as f32,
+            (self.x_from + self.w_from) as f32,
+            self.y.get() as f32 + OPTIC_HEIGHT as f32 ,
+            3.0,
+            RED
+        );
+
     }
 }
 
@@ -54,16 +86,10 @@ impl Level {
     }
 
     fn render(&self) {
-        self.optics.iter().for_each(
-            |optic|
-            draw_rectangle(
-                0.0,
-                0.0,
-                100.0,
-                Cell::get(&optic.y) as f32,
-                GREEN
-            )
-        );
+    }
+
+    fn shift(&mut self, shift: i16) {
+        self.optics = self.optics.iter().map(|optic| optic.shift(shift)).collect();
     }
 }
 
@@ -72,7 +98,7 @@ async fn select_level () -> Option<LevelName> {
 }
 
 const W: u16 = 800;
-const H: u16 = 1000;
+const H: u16 = 800;
 
 const OPTIC_HEIGHT : u16 = 30;
 
@@ -88,13 +114,13 @@ impl Screen {
             core::array::from_fn(
                 |i_usize|
                 {
-                    let i = i_usize as u16;
+                    let i = i_usize as i16;
                     let is_in = i >= opt.x_to && i < opt.w_to + opt.x_to;
 
                     if is_in {
                         let rel_w = (i - opt.x_to) as f32 / opt.w_to as f32;
                         let rel_x: usize = (opt.x_from +
-                                            (rel_w * opt.w_from as f32) as u16) as usize;
+                                            (rel_w * opt.w_from as f32) as i16) as usize;
                         (*self).area[rel_x]
                     } else { (*self).area[i_usize] }
                 }
@@ -105,12 +131,15 @@ impl Screen {
     fn draw(&self, y: i16) {
         self.area.iter().enumerate().for_each(
             |(i, flag)|
-            draw_rectangle(
-                i as f32,
-                0.0,
-                1.0,
-                y as f32,
-                if *flag { ORANGE } else { BLACK })
+
+            if y <= H as i16 {
+                draw_rectangle(
+                    i as f32,
+                    0.0,
+                    1.0,
+                    y as f32,
+                    if *flag { ORANGE } else { BLACK })
+            }
         );
     }
 }
@@ -124,7 +153,7 @@ async fn main() {
 
     let mut screen = Screen { area: [false; W as usize] };
 
-    let LINE_W = 5;
+    let LINE_W = 10;
 
     let mut s = prng.next_u32();
     for i in 0 .. W {
@@ -136,41 +165,62 @@ async fn main() {
 
     let mut level1 = Level {
         optics: vec![
-            Optic { x_from: 10, w_from: 100, x_to: 30, w_to: 40, y: Cell::new(-20) },
-            Optic { x_from: 10, w_from: 100, x_to: 30, w_to: 80, y: Cell::new(-200) },
+            Optic { x_from: 10, w_from: 400, x_to: 130, w_to: 100, y: Cell::new(-20) },
+            Optic { x_from: 210, w_from: 100, x_to: 120, w_to: 400, y: Cell::new(-200) },
+            Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-400) },
         ]
     };
 
     loop {
-        let mut acc_screen = screen.clone();
 
         clear_background(Color{r:200.,g:200.,b:200.,a:0.});
 
-        screen.draw(H as i16);
-
         level1.step();
-        level1.render();
+
+        level1.optics = level1.optics.into_iter().filter(
+            |optic|
+            {
+                let y = optic.y.get();
+                let res = y < H as i16;
+                if !res {
+                    screen = screen.compute(&optic);
+                }
+                res
+            }
+        ).collect();
+
+        let mut acc_screen = screen.clone();
+
+        screen.draw(H as i16);
 
         level1.optics.iter().for_each(
             |optic|
             {
+                if optic.y.get() < 0 {
+                    return;
+                }
+
                 let mut temp_screen = acc_screen.clone(); //TODO remove clone
-                for i in 0 .. OPTIC_HEIGHT - 1 {
+                for i in (0 .. OPTIC_HEIGHT - 1).rev() {
                     let temp_optic = &optic.get_relative(OPTIC_HEIGHT - i);
                     acc_screen.compute(temp_optic)
-                        .draw(temp_optic.y.get() as i16 - i as i16)
+                        .draw(optic.y.get() as i16 + i as i16)
                 }
 
                 acc_screen = acc_screen.compute(&optic);
-                acc_screen.draw(optic.y.get() - OPTIC_HEIGHT as i16)
-                // temp_screen.draw(optic.y.get())
+                acc_screen.draw(optic.y.get() as i16);
+                optic.draw();
             }
         );
 
-        // draw_line(40.0, 40.0, 100.0, 200.0, 15.0, BLUE);
-        // draw_rectangle(screen_width() / 2.0 - 60.0, 100.0, 120.0, 60.0, GREEN);
-        // draw_circle(screen_width() - 30.0, screen_height() - 30.0, 15.0, YELLOW);
-        draw_text("IT WORKS!", 20.0 + frameCounter as f32, 20.0, 30.0, DARKGRAY);
+        if is_key_down(KeyCode::Right) {
+            level1.shift(5);
+        }
+
+        if is_key_down(KeyCode::Left) {
+            level1.shift(-5);
+        }
+
         frameCounter += 1;
         next_frame().await
     }
