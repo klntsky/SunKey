@@ -168,23 +168,7 @@ impl Screen {
 
     fn compute(&self, opt: &Optic) -> Screen {
         Screen(
-            core::array::from_fn(
-                |i_usize|
-                {
-                    self.compute_pixel(opt, i_usize)
-                    // let i = i_usize as i16;
-                    // let is_in = i >= opt.x_to && i < opt.w_to + opt.x_to;
-
-                    // if is_in {
-                    //     let rel_w = (i - opt.x_to) as f32 / opt.w_to as f32;
-                    //     let rel_x: usize = (opt.x_from +
-                    //                         (rel_w * opt.w_from as f32) as i16) as usize;
-                    //     self.0[rel_x % W as usize]
-                    // } else {
-                    //     self.0[i_usize]
-                    // }
-                }
-            )
+            core::array::from_fn(|i_usize| self.compute_pixel(opt, i_usize))
         )
     }
 
@@ -209,8 +193,6 @@ impl Screen {
                     first_cell = i;
                     last_flag = *flag;
                 }
-                // if i == W as usize - 1 {
-                // }
             }
         );
 
@@ -225,6 +207,21 @@ impl Screen {
         }
     }
 }
+
+fn mk_prism (mut prng: Xoshiro128StarStar) -> (Xoshiro128StarStar, Optic) {
+
+    let w_from = (prng.next_u32() % (W as u32 / 3)) as i16;
+    let w_to = (prng.next_u32() % (W as u32 / 3)) as i16;
+
+    let w = max(w_from, w_to);
+    let x_center = (prng.next_u32() % (W - w / 2) as u32) as i16;
+
+    let x_from = x_center - w_from / 2;
+    let x_to = x_center - w_to / 2;
+
+    (prng, Optic { x_from, w_from, x_to, w_to, y: Cell::new(-OPTIC_HEIGHT) })
+}
+
 fn get_sec () -> u64 {
     let start = SystemTime::now();
     let since_the_epoch = start
@@ -252,8 +249,8 @@ async fn main() {
 
     let mut level1 = Level {
         optics: vec![
-            Optic { x_from: 10, w_from: 400, x_to: 130, w_to: 100, y: Cell::new(-100) },
-            Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-600) },
+            Optic { x_from: 10, w_from: 100, x_to: 130, w_to: 100, y: Cell::new(-100) },
+            Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 100, y: Cell::new(-600) },
             // Optic { x_from: 210, w_from: 100, x_to: 120, w_to: 400, y: Cell::new(-800) },
             // Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-600) },
             // Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-900) },
@@ -312,29 +309,6 @@ async fn main() {
             }
         ).collect();
 
-        // screen.draw(finish, false);
-
-        // level1.optics.iter().for_each(
-        //     |optic|
-        //     {
-        //         if optic.y.get() < - (OPTIC_HEIGHT as i16) {
-        //             return;
-        //         }
-
-        //         for i in (0 .. OPTIC_HEIGHT - 1).rev() {
-        //             let temp_optic = &optic.get_relative(OPTIC_HEIGHT - i);
-        //             acc_screen.compute(temp_optic)
-        //                 .draw(optic.y.get() + i as i16, // i != 0 && i != OPTIC_HEIGHT - 1
-        //                       true
-        //                 )
-        //         }
-
-        //         acc_screen = acc_screen.compute(&optic);
-        //         acc_screen.draw(optic.y.get(), false);
-        //         optic.draw();
-        //     }
-        // );
-
         if is_key_down(KeyCode::Right) {
             level1.shift(5);
         }
@@ -357,13 +331,9 @@ async fn main() {
         draw_text(fps.to_string().as_str(), 21.0, 21.0, 30.0, GREEN);
 
         if needs_push {
-            let w_from = (prng.next_u32() % (W as u32 / 3)) as i16;
-            let x_from = W / 2 - w_from / 2;
-            let w_to = (prng.next_u32() % (W as u32 / 3)) as i16;
-            let x_to = W / 2 - w_to / 2;
-            level1.optics.push(
-                Optic { x_from, w_from, x_to, w_to, y: Cell::new(-OPTIC_HEIGHT) }
-            );
+            let prism;
+            (prng, prism) = mk_prism(prng);
+            level1.optics.push(prism);
         }
 
         next_frame().await
@@ -373,6 +343,8 @@ async fn main() {
 fn window_conf() -> Conf {
     Conf {
         window_title: "SUN KEY".to_owned(),
+        window_width: W as i32,
+        window_height: H as i32,
         fullscreen: true,
         ..Default::default()
     }
@@ -380,7 +352,6 @@ fn window_conf() -> Conf {
 
 #[cfg(test)]
 mod tests {
-    // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
 
     #[test]
