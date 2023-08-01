@@ -55,22 +55,49 @@ impl Optic {
     }
 
     fn shift(&self, shift: i16) -> Optic {
+        let mut x_from = self.x_from + shift;
+        let mut x_to = self.x_to + shift;
+
+        // left border
+        if x_to < 0 {
+            x_from -= x_to;
+            x_to = 0;
+        }
+        if x_from < 0 {
+            x_to -= x_from;
+            x_from = 0;
+        }
+
+        // right border
+        {
+            let to_overflow = x_to + self.w_to - W;
+            if to_overflow > 0 {
+                x_to -= to_overflow;
+                x_from -= to_overflow;
+            }
+        }
+        {
+            let from_overflow = x_from + self.w_from - W;
+            if from_overflow > 0 {
+                x_to -= from_overflow;
+                x_from -= from_overflow;
+            }
+        }
+
         Optic {
-            x_from: self.x_from + shift,
-            x_to: self.x_to + shift,
-            w_from: self.w_from,
-            w_to: self.w_to,
-            y: Cell::new(self.y.get())
+            x_from,
+            x_to,
+            y: Cell::new(self.y.get()),
+            ..*self
         }
     }
 
     fn get_relative(&self, mut progress: i16) -> Optic {
         let mut progress = progress % OPTIC_HEIGHT;
-        Optic { x_from: self.x_from,
-                w_from: self.w_from, // TODO move progress() to utils
-                x_to: (self.x_from + (self.x_to - self.x_from) * progress / (OPTIC_HEIGHT - 1)),
+        Optic { x_to: (self.x_from + (self.x_to - self.x_from) * progress / (OPTIC_HEIGHT - 1)),
                 w_to: (self.w_from + (self.w_to - self.w_from) * progress / (OPTIC_HEIGHT - 1)),
-                y: Cell::new(self.y.get() + progress)
+                y: Cell::new(self.y.get() + progress),
+                ..*self
         }
     }
 
@@ -92,7 +119,7 @@ impl Optic {
         //     6.0,
         //     RED
         // );
-        let optic_color = Color{ r: 0.8, g: 0.4, b: 0.4, a: 0.8 };
+        let optic_color = Color{ r: 0.9, g: 0.3, b: 0.4, a: 0.8 };
 
         draw_triangle(
             Vec2::new(self.x_from as f32,                 (self.y.get() + OPTIC_HEIGHT) as f32),
@@ -262,7 +289,6 @@ async fn main() {
     let mut fps: u64 = 0;
 
     loop {
-        // clear_background(Color{r:200.,g:200.,b:200.,a:0.});
         level1.step();
 
         let mut needs_push = false;
