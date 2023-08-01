@@ -29,7 +29,7 @@ pub struct Optic {
 
 impl Optic {
     fn step(&self) {
-        self.y.update(|y| y + 1);
+        self.y.update(|y| y + SPEED);
     }
 
     fn shift(&self, shift: i16) -> Optic {
@@ -45,9 +45,8 @@ impl Optic {
     fn get_relative(&self, progress_u: u16) -> Optic {
         let progress = progress_u as i16 % OPTIC_HEIGHT as i16;
         Optic { x_from: self.x_from,
-                w_from: self.w_from,
-                x_to:
-                  ( self.x_from + (self.x_to  - self.x_from) * progress / (OPTIC_HEIGHT - 1) as i16),
+                w_from: self.w_from, // TODO move progress() to utils
+                x_to: (self.x_from + (self.x_to - self.x_from) * progress / (OPTIC_HEIGHT - 1) as i16),
                 w_to: (self.w_from + (self.w_to - self.w_from) * progress / (OPTIC_HEIGHT - 1) as i16),
                 y: Cell::new(self.y.get() + progress_u as i16)
         }
@@ -95,10 +94,11 @@ async fn select_level () -> Option<LevelName> {
     Some(LevelName::L1)
 }
 
-const W: u16 = 500;
-const H: u16 = 600;
-
+const SPEED: i16 = 1;
+const W: i16 = 800;
+const H: i16 = 1000;
 const OPTIC_HEIGHT : u16 = 30;
+const LINE_W: i16 = 10;
 
 #[derive(Clone, Copy)]
 struct Screen ([bool; W as usize]);
@@ -133,7 +133,7 @@ impl Screen {
 
         self.0.iter().enumerate().for_each(
             |(i, flag)| {
-                if (last_flag != *flag) {
+                if last_flag != *flag {
                     draw_rectangle(
                         first_cell as f32,
                         if slim { y as f32 - 1.0 } else { 0.0 },
@@ -144,6 +144,15 @@ impl Screen {
                     first_cell = i;
                     last_flag = *flag;
                 }
+                // if i == W as usize - 1 {
+                //     draw_rectangle(
+                //         first_cell as f32,
+                //         if slim { y as f32 - 1.0 } else { 0.0 },
+                //         (i - first_cell) as f32,
+                //         if slim { 1.0 } else { y as f32 },
+                //         if *flag { ORANGE } else { BLACK }
+                //     );
+                // }
             }
         );
     }
@@ -165,8 +174,6 @@ async fn main() {
 
     let mut screen = Screen([false; W as usize]);
 
-    let LINE_W = 10;
-
     let mut s = prng.next_u32();
     for i in 0 .. W {
         if i % LINE_W == 0 {
@@ -178,10 +185,10 @@ async fn main() {
     let mut level1 = Level {
         optics: vec![
             Optic { x_from: 10, w_from: 400, x_to: 130, w_to: 100, y: Cell::new(-20) },
-            Optic { x_from: 210, w_from: 100, x_to: 120, w_to: 400, y: Cell::new(-200) },
+            Optic { x_from: 210, w_from: 100, x_to: 120, w_to: 400, y: Cell::new(-800) },
             Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-400) },
             Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-600) },
-            Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-900) },
+            // Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-900) },
         ]
     };
 
@@ -191,9 +198,10 @@ async fn main() {
 
     loop {
         // clear_background(Color{r:200.,g:200.,b:200.,a:0.});
-
         level1.step();
 
+        let mut needs_push = false;
+        // delete
         level1.optics = level1.optics.into_iter().filter(
             |optic|
             {
@@ -201,10 +209,21 @@ async fn main() {
                 let res = y < H as i16;
                 if !res {
                     screen = screen.compute(&optic);
+                    needs_push = true;
                 }
                 res
             }
         ).collect();
+
+        if needs_push {
+            let w_from = (prng.next_u32() % (W as u32 / 2)) as i16;
+            let x_from = W / 2 - w_from / 2;
+            let w_to = (prng.next_u32() % (W as u32 / 2)) as i16;
+            let x_to = W / 2 - w_to / 2;
+            level1.optics.push(
+                Optic { x_from, w_from, x_to, w_to, y: Cell::new(-20) }
+            );
+        }
 
         let mut acc_screen = screen.clone();
 
@@ -221,11 +240,13 @@ async fn main() {
                 for i in (0 .. OPTIC_HEIGHT - 1).rev() {
                     let temp_optic = &optic.get_relative(OPTIC_HEIGHT - i);
                     acc_screen.compute(temp_optic)
-                        .draw(optic.y.get() as i16 + i as i16, true)
+                        .draw(optic.y.get() + i as i16, // i != 0 && i != OPTIC_HEIGHT - 1
+                              true
+                        )
                 }
 
                 acc_screen = acc_screen.compute(&optic);
-                acc_screen.draw(optic.y.get() as i16, false);
+                acc_screen.draw(optic.y.get(), false);
                 optic.draw();
             }
         );
