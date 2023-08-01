@@ -94,7 +94,7 @@ async fn select_level () -> Option<LevelName> {
     Some(LevelName::L1)
 }
 
-const SPEED: i16 = 1;
+const SPEED: i16 = 5;
 const W: i16 = 800;
 const H: i16 = 1000;
 const OPTIC_HEIGHT : u16 = 30;
@@ -145,16 +145,20 @@ impl Screen {
                     last_flag = *flag;
                 }
                 // if i == W as usize - 1 {
-                //     draw_rectangle(
-                //         first_cell as f32,
-                //         if slim { y as f32 - 1.0 } else { 0.0 },
-                //         (i - first_cell) as f32,
-                //         if slim { 1.0 } else { y as f32 },
-                //         if *flag { ORANGE } else { BLACK }
-                //     );
                 // }
             }
+
         );
+
+        if first_cell as i16 != W - 1 {
+            draw_rectangle(
+                first_cell as f32,
+                if slim { y as f32 - 1.0 } else { 0.0 },
+                (W - first_cell as i16) as f32,
+                if slim { 1.0 } else { y as f32 },
+                if last_flag { ORANGE } else { BLACK }
+            );
+        }
     }
 }
 fn get_sec () -> u64 {
@@ -184,10 +188,10 @@ async fn main() {
 
     let mut level1 = Level {
         optics: vec![
-            Optic { x_from: 10, w_from: 400, x_to: 130, w_to: 100, y: Cell::new(-20) },
+            // Optic { x_from: 10, w_from: 400, x_to: 130, w_to: 100, y: Cell::new(-20) },
             Optic { x_from: 210, w_from: 100, x_to: 120, w_to: 400, y: Cell::new(-800) },
             Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-400) },
-            Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-600) },
+            // Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-600) },
             // Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-900) },
         ]
     };
@@ -214,16 +218,6 @@ async fn main() {
                 res
             }
         ).collect();
-
-        if needs_push {
-            let w_from = (prng.next_u32() % (W as u32 / 2)) as i16;
-            let x_from = W / 2 - w_from / 2;
-            let w_to = (prng.next_u32() % (W as u32 / 2)) as i16;
-            let x_to = W / 2 - w_to / 2;
-            level1.optics.push(
-                Optic { x_from, w_from, x_to, w_to, y: Cell::new(-20) }
-            );
-        }
 
         let mut acc_screen = screen.clone();
 
@@ -271,6 +265,17 @@ async fn main() {
 
         draw_text(fps.to_string().as_str(), 20.0, 20.0, 30.0, RED);
         draw_text(fps.to_string().as_str(), 21.0, 21.0, 30.0, GREEN);
+
+        if needs_push {
+            let w_from = (prng.next_u32() % (W as u32 / 2)) as i16;
+            let x_from = W / 2 - w_from / 2;
+            let w_to = (prng.next_u32() % (W as u32 / 2)) as i16;
+            let x_to = W / 2 - w_to / 2;
+            level1.optics.push(
+                Optic { x_from, w_from, x_to, w_to, y: Cell::new(-20) }
+            );
+        }
+
         next_frame().await
     }
 }
