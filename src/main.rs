@@ -28,6 +28,28 @@ pub struct Optic {
 }
 
 impl Optic {
+    fn get_left_complement(&self) -> Optic {
+        Optic {
+            x_from: 0,
+            w_from: self.x_from,
+            x_to: 0,
+            w_to: self.x_to,
+            y: Cell::new(self.y.get())
+        }
+    }
+
+    fn get_right_complement(&self) -> Optic {
+        let start_from = self.x_from + self.w_from;
+        let start_to = self.x_to + self.w_to;
+        Optic {
+            x_from: start_from,
+            w_from: W - start_from,
+            x_to: start_to,
+            w_to: W - start_to,
+            y: Cell::new(self.y.get())
+        }
+    }
+
     fn step(&self) {
         self.y.update(|y| y + SPEED);
     }
@@ -42,33 +64,48 @@ impl Optic {
         }
     }
 
-    fn get_relative(&self, progress_u: u16) -> Optic {
-        let progress = progress_u as i16 % OPTIC_HEIGHT as i16;
+    fn get_relative(&self, mut progress: i16) -> Optic {
+        let mut progress = progress % OPTIC_HEIGHT;
         Optic { x_from: self.x_from,
                 w_from: self.w_from, // TODO move progress() to utils
-                x_to: (self.x_from + (self.x_to - self.x_from) * progress / (OPTIC_HEIGHT - 1) as i16),
-                w_to: (self.w_from + (self.w_to - self.w_from) * progress / (OPTIC_HEIGHT - 1) as i16),
-                y: Cell::new(self.y.get() + progress_u as i16)
+                x_to: (self.x_from + (self.x_to - self.x_from) * progress / (OPTIC_HEIGHT - 1)),
+                w_to: (self.w_from + (self.w_to - self.w_from) * progress / (OPTIC_HEIGHT - 1)),
+                y: Cell::new(self.y.get() + progress)
         }
     }
 
     fn draw(&self) {
-        draw_line(
-            self.x_to as f32,
-            self.y.get() as f32,
-            self.x_from as f32,
-            (self.y.get() as f32 + OPTIC_HEIGHT as f32).min(H as f32),
-            3.0,
-            RED
+        // draw_line(
+        //     self.x_to as f32,
+        //     self.y.get() as f32,
+        //     self.x_from as f32,
+        //     (self.y.get() as f32 + OPTIC_HEIGHT as f32).min(H as f32),
+        //     6.0,
+        //     RED
+        // );
+
+        // draw_line(
+        //     (self.x_to + self.w_to) as f32,
+        //     self.y.get() as f32,
+        //     (self.x_from + self.w_from) as f32,
+        //     (self.y.get() as f32 + OPTIC_HEIGHT as f32).min(H as f32),
+        //     6.0,
+        //     RED
+        // );
+        let optic_color = Color{ r: 0.8, g: 0.4, b: 0.4, a: 0.8 };
+
+        draw_triangle(
+            Vec2::new(self.x_from as f32,                 (self.y.get() + OPTIC_HEIGHT) as f32),
+            Vec2::new((self.x_from + self.w_from) as f32, (self.y.get() + OPTIC_HEIGHT) as f32),
+            Vec2::new((self.x_to) as f32,                 self.y.get() as f32),
+            optic_color
         );
 
-        draw_line(
-            (self.x_to + self.w_to) as f32,
-            self.y.get() as f32,
-            (self.x_from + self.w_from) as f32,
-            (self.y.get() as f32 + OPTIC_HEIGHT as f32).min(H as f32),
-            3.0,
-            RED
+        draw_triangle(
+            Vec2::new(self.x_to as f32,                   self.y.get() as f32),
+            Vec2::new((self.x_to + self.w_to) as f32,     self.y.get() as f32),
+            Vec2::new((self.x_from + self.w_from) as f32, (self.y.get()  + OPTIC_HEIGHT) as f32),
+            optic_color
         );
     }
 }
@@ -94,30 +131,58 @@ async fn select_level () -> Option<LevelName> {
     Some(LevelName::L1)
 }
 
-const SPEED: i16 = 5;
+const SPEED: i16 = 8;
 const W: i16 = 800;
 const H: i16 = 1000;
-const OPTIC_HEIGHT : u16 = 30;
+const OPTIC_HEIGHT : i16 = 100;
 const LINE_W: i16 = 10;
 
 #[derive(Clone, Copy)]
 struct Screen ([bool; W as usize]);
 
 impl Screen {
+    fn compute_pixel_unsafe(&self, opt: &Optic, i_usize: usize) -> bool {
+        let i = i_usize as i16;
+        let rel_w = (i - opt.x_to) as f32 / opt.w_to as f32;
+        let rel_x: usize = (opt.x_from +
+                            (rel_w * opt.w_from as f32) as i16) as usize;
+        self.0[rel_x % W as usize]
+    }
+
+    fn compute_pixel(&self, opt: &Optic, i_usize: usize) -> bool {
+        let i = i_usize as i16;
+        let is_in = i >= opt.x_to && i < opt.w_to + opt.x_to;
+        let is_left = i > 0 && i < opt.x_to;
+        let is_right = i < W && i >= opt.w_to + opt.x_to;
+
+        if is_in {
+            self.compute_pixel_unsafe(&opt, i_usize)
+        } else if is_left {
+            self.compute_pixel_unsafe(&opt.get_left_complement(), i_usize)
+        } else if is_right {
+            self.compute_pixel_unsafe(&opt.get_right_complement(), i_usize)
+        } else {
+            self.0[i_usize]
+        }
+    }
+
     fn compute(&self, opt: &Optic) -> Screen {
         Screen(
             core::array::from_fn(
                 |i_usize|
                 {
-                    let i = i_usize as i16;
-                    let is_in = i >= opt.x_to && i < opt.w_to + opt.x_to;
+                    self.compute_pixel(opt, i_usize)
+                    // let i = i_usize as i16;
+                    // let is_in = i >= opt.x_to && i < opt.w_to + opt.x_to;
 
-                    if is_in {
-                        let rel_w = (i - opt.x_to) as f32 / opt.w_to as f32;
-                        let rel_x: usize = (opt.x_from +
-                                            (rel_w * opt.w_from as f32) as i16) as usize;
-                        self.0[rel_x % W as usize]
-                    } else { self.0[i_usize] }
+                    // if is_in {
+                    //     let rel_w = (i - opt.x_to) as f32 / opt.w_to as f32;
+                    //     let rel_x: usize = (opt.x_from +
+                    //                         (rel_w * opt.w_from as f32) as i16) as usize;
+                    //     self.0[rel_x % W as usize]
+                    // } else {
+                    //     self.0[i_usize]
+                    // }
                 }
             )
         )
@@ -147,7 +212,6 @@ impl Screen {
                 // if i == W as usize - 1 {
                 // }
             }
-
         );
 
         if first_cell as i16 != W - 1 {
@@ -169,7 +233,7 @@ fn get_sec () -> u64 {
     since_the_epoch.as_secs()
 }
 
-#[macroquad::main("SHAPES")]
+#[macroquad::main(window_conf)]
 async fn main() {
     let mut frameCounter : u64 = 0;
     let mut prng = Xoshiro128StarStar::seed_from_u64(123);
@@ -188,9 +252,9 @@ async fn main() {
 
     let mut level1 = Level {
         optics: vec![
-            // Optic { x_from: 10, w_from: 400, x_to: 130, w_to: 100, y: Cell::new(-20) },
-            Optic { x_from: 210, w_from: 100, x_to: 120, w_to: 400, y: Cell::new(-800) },
-            Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-400) },
+            Optic { x_from: 10, w_from: 400, x_to: 130, w_to: 100, y: Cell::new(-100) },
+            Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-600) },
+            // Optic { x_from: 210, w_from: 100, x_to: 120, w_to: 400, y: Cell::new(-800) },
             // Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-600) },
             // Optic { x_from: 110, w_from: 100, x_to: 10, w_to: 400, y: Cell::new(-900) },
         ]
@@ -205,6 +269,35 @@ async fn main() {
         level1.step();
 
         let mut needs_push = false;
+
+        screen.draw(H as i16, false);
+
+        (_, _) = level1.optics.iter().fold((screen, H), |(scr, start), optic| {
+            if optic.y.get() < - OPTIC_HEIGHT {
+                return (scr, start);
+            }
+
+            if optic.y.get() >= H {
+                let next_scr = scr.compute(optic);
+                next_scr.draw(H as i16, false);
+                return (next_scr, optic.y.get());
+            }
+
+            for i in (0 .. OPTIC_HEIGHT - 1).rev() {
+                let temp_optic = &optic.get_relative(OPTIC_HEIGHT - i);
+                scr.compute(temp_optic)
+                    .draw(optic.y.get() + i as i16, // i != 0 && i != OPTIC_HEIGHT - 1
+                          true
+                    )
+            }
+
+            let scr_next = scr.compute(&optic);
+            scr_next.draw(optic.y.get(), false);
+            optic.draw();
+
+            (scr_next, optic.y.get())
+        });
+
         // delete
         level1.optics = level1.optics.into_iter().filter(
             |optic|
@@ -219,31 +312,28 @@ async fn main() {
             }
         ).collect();
 
-        let mut acc_screen = screen.clone();
+        // screen.draw(finish, false);
 
-        screen.draw(H as i16, false);
+        // level1.optics.iter().for_each(
+        //     |optic|
+        //     {
+        //         if optic.y.get() < - (OPTIC_HEIGHT as i16) {
+        //             return;
+        //         }
 
-        level1.optics.iter().for_each(
-            |optic|
-            {
-                if optic.y.get() < - (OPTIC_HEIGHT as i16) {
-                    return;
-                }
+        //         for i in (0 .. OPTIC_HEIGHT - 1).rev() {
+        //             let temp_optic = &optic.get_relative(OPTIC_HEIGHT - i);
+        //             acc_screen.compute(temp_optic)
+        //                 .draw(optic.y.get() + i as i16, // i != 0 && i != OPTIC_HEIGHT - 1
+        //                       true
+        //                 )
+        //         }
 
-                let mut temp_screen = acc_screen;
-                for i in (0 .. OPTIC_HEIGHT - 1).rev() {
-                    let temp_optic = &optic.get_relative(OPTIC_HEIGHT - i);
-                    acc_screen.compute(temp_optic)
-                        .draw(optic.y.get() + i as i16, // i != 0 && i != OPTIC_HEIGHT - 1
-                              true
-                        )
-                }
-
-                acc_screen = acc_screen.compute(&optic);
-                acc_screen.draw(optic.y.get(), false);
-                optic.draw();
-            }
-        );
+        //         acc_screen = acc_screen.compute(&optic);
+        //         acc_screen.draw(optic.y.get(), false);
+        //         optic.draw();
+        //     }
+        // );
 
         if is_key_down(KeyCode::Right) {
             level1.shift(5);
@@ -267,16 +357,24 @@ async fn main() {
         draw_text(fps.to_string().as_str(), 21.0, 21.0, 30.0, GREEN);
 
         if needs_push {
-            let w_from = (prng.next_u32() % (W as u32 / 2)) as i16;
+            let w_from = (prng.next_u32() % (W as u32 / 3)) as i16;
             let x_from = W / 2 - w_from / 2;
-            let w_to = (prng.next_u32() % (W as u32 / 2)) as i16;
+            let w_to = (prng.next_u32() % (W as u32 / 3)) as i16;
             let x_to = W / 2 - w_to / 2;
             level1.optics.push(
-                Optic { x_from, w_from, x_to, w_to, y: Cell::new(-20) }
+                Optic { x_from, w_from, x_to, w_to, y: Cell::new(-OPTIC_HEIGHT) }
             );
         }
 
         next_frame().await
+    }
+}
+
+fn window_conf() -> Conf {
+    Conf {
+        window_title: "SUN KEY".to_owned(),
+        fullscreen: true,
+        ..Default::default()
     }
 }
 
