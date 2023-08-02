@@ -9,3 +9,7 @@ edition = "2021"
 macroquad = "0.4"
 rand_xoshiro = "0.6.0"
 rand_core = "0.6.0"
+
+[package.metadata.android.activity_attributes]
+"android:screenOrientation" = "userPortrait"
+"android:exported" = "true"
