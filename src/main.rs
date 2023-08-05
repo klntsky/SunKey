@@ -7,6 +7,7 @@ use rand_core::SeedableRng;
 use rand_core::RngCore;
 use macroquad::input::*;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::f32::consts::{PI};
 
 #[derive(PartialEq,Eq,Debug,Clone)]
 pub struct Optic {
@@ -116,15 +117,35 @@ impl Optic {
 
 pub struct ScreenScale {
     x: f32,
-    y: f32
+    y: f32,
+    w: f32,
+    h: f32,
 }
 
 impl ScreenScale {
     fn new() -> ScreenScale {
         ScreenScale {
             x: W as f32 / screen_width(),
-            y: H as f32 / screen_height()
+            y: H as f32 / screen_height(),
+            w: screen_width(),
+            h: screen_height()
         }
+    }
+
+    fn ratio (&self) -> f32 {
+        (W as f32 / self.w).max(
+            H as f32 / self.h
+        )
+    }
+
+    fn x(&self, x: f32) -> f32 {
+        let shift = W as f32 / self.ratio() - self.w as f32;
+        return x as f32 / self.ratio() - shift / 2.0;
+    }
+
+    fn y(&self, y: f32) -> f32 {
+        let shift = H as f32 / self.ratio() - self.h as f32;
+        return y as f32 / self.ratio() - shift / 2.0;
     }
 }
 
@@ -144,6 +165,7 @@ impl Level {
 }
 
 const SPEED: i16 = 8;
+const H_SPEED: i16 = 8;
 const W: i16 = 800;
 const H: i16 = 1000;
 const OPTIC_HEIGHT : i16 = 100;
@@ -244,22 +266,54 @@ fn get_sec () -> u64 {
 }
 
 fn draw_rectangle_rel (x: f32, y: f32, w: f32, h: f32, color: Color, ss: &ScreenScale) {
-    draw_rectangle(x / ss.x, y / ss.y, w / ss.x, h / ss.y, color);
+    draw_rectangle(ss.x(x), ss.y(y), ss.x(w), ss.y(h), color);
 }
 
 fn draw_triangle_rel (a: Vec2, b: Vec2, c: Vec2, color: Color, ss: &ScreenScale) {
     draw_triangle(
-        Vec2::new(a.x / ss.x, a.y / ss.y),
-        Vec2::new(b.x / ss.x, b.y / ss.y),
-        Vec2::new(c.x / ss.x, c.y / ss.y),
+        Vec2::new(ss.x(a.x), ss.y(a.y)),
+        Vec2::new(ss.x(b.x), ss.y(b.y)),
+        Vec2::new(ss.x(c.x), ss.y(c.y)),
         color
     );
 }
 
-#[macroquad::main(window_conf)]
-async fn main() {
-    let mut prng = Xoshiro128StarStar::seed_from_u64(123);
-    request_new_screen_size(W as f32, H as f32);
+async fn draw_sun (ray_count: i16, screen_scale: &ScreenScale) {
+    let mut ray_progress = 0;
+    let mut progress = 0.05;
+    let pi2 = PI*2.0;
+
+    // 1.1 because we want a little delay
+    while progress < 1.1 {
+        for i in 0..ray_count {
+            let base = ((pi2/ray_count as f32) * i as f32) + progress;
+            let from = base;
+            let to = ((pi2/ray_count as f32) * (i as f32 + progress)) + progress;
+
+            draw_triangle_rel(
+                Vec2::new(
+                    (W/2) as f32,
+                    (H/2) as f32
+                ),
+                Vec2::new(
+                    (W/2) as f32 + from.sin() * 2.0 * W as f32,
+                    (H/2) as f32 + from.cos() * 2.0 * H as f32
+                ),
+                Vec2::new(
+                    (W/2) as f32 + to.sin() * 2.0 * W as f32,
+                    (H/2) as f32 + to.cos() * 2.0 * H as f32
+                ),
+                ORANGE,
+                &screen_scale
+            );
+        }
+
+        progress += 0.015;
+        next_frame().await
+    }
+}
+
+fn generate_screen (prng : &mut Xoshiro128StarStar) -> Screen {
     let mut screen = Screen([false; W as usize]);
 
     let mut s = prng.next_u32();
@@ -269,6 +323,39 @@ async fn main() {
         }
         screen.0[i as usize] = s % 2 == 1;
     }
+
+    screen
+}
+
+async fn transition_to_screen (
+    screen_target: &Screen,
+    screen_scale: &ScreenScale,
+    prng: &mut Xoshiro128StarStar
+) {
+    let mut screen = Screen([false; W as usize]);
+    let mut all = false;
+
+    while !all {
+        all = true;
+        for (i, flag) in screen_target.0.iter().enumerate() {
+            if screen.0[i] != *flag {
+                if prng.next_u32() % 10 == 0 {
+                    screen.0[i] = *flag;
+                } else {
+                    all = false;
+                }
+            }
+        }
+        screen.draw(H, &screen_scale, false);
+        next_frame().await;
+    }
+}
+
+#[macroquad::main(window_conf)]
+async fn main() {
+    let mut prng = Xoshiro128StarStar::seed_from_u64(123);
+
+    let mut screen = generate_screen(&mut prng);
 
     let mut level1 = Level {
         optics: vec![
@@ -296,8 +383,13 @@ async fn main() {
     request_new_screen_size(screen_width(), screen_height());
     next_frame().await;
 
+    draw_sun(5, &screen_scale).await;
+
+    transition_to_screen(&screen, &screen_scale, &mut prng).await;
+
     loop {
         screen_scale = ScreenScale::new();
+
         level1.step();
 
         let mut needs_push = false;
@@ -352,11 +444,11 @@ async fn main() {
         // Handle <- and ->
         {
             if is_key_down(KeyCode::Right) {
-                level1.shift(5);
+                level1.shift(H_SPEED);
             }
 
             if is_key_down(KeyCode::Left) {
-                level1.shift(-5);
+                level1.shift(-H_SPEED);
             }
         }
 
