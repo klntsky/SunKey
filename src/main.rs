@@ -8,14 +8,6 @@ use rand_core::RngCore;
 use macroquad::input::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-struct Game {
-
-}
-
-pub enum LevelName {
-    L1 = 0,
-}
-
 #[derive(PartialEq,Eq,Debug,Clone)]
 pub struct Optic {
     x_from: i16,
@@ -149,10 +141,6 @@ impl Level {
         self.optics = self.optics.iter().map(
             |optic| optic.shift(shift)).collect();
     }
-}
-
-async fn select_level () -> Option<LevelName> {
-    Some(LevelName::L1)
 }
 
 const SPEED: i16 = 8;
