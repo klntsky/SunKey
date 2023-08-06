@@ -1,13 +1,14 @@
-use macroquad::prelude::*;
 use macroquad::color::Color;
+use macroquad::input::*;
+use macroquad::prelude::*;
+use macroquad::time::{get_fps};
+use rand_core::RngCore;
+use rand_core::SeedableRng;
+use rand_xoshiro::Xoshiro128StarStar;
 use std::cell::Cell;
 use std::cmp::*;
-use rand_xoshiro::Xoshiro128StarStar;
-use rand_core::SeedableRng;
-use rand_core::RngCore;
-use macroquad::input::*;
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::f32::consts::{PI};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(PartialEq,Eq,Debug,Clone)]
 pub struct Optic {
@@ -139,12 +140,14 @@ impl ScreenScale {
     }
 
     fn x(&self, x: f32) -> f32 {
-        let shift = W as f32 / self.ratio() - self.w as f32;
+        // TODO: restore shift when performance is fixed
+        let shift = 0.0; // W as f32 / self.ratio() - self.w as f32;
         return x as f32 / self.ratio() - shift / 2.0;
     }
 
     fn y(&self, y: f32) -> f32 {
-        let shift = H as f32 / self.ratio() - self.h as f32;
+        // TODO: restore shift when performance is fixed
+        let shift = 0.0; // H as f32 / self.ratio() - self.h as f32;
         return y as f32 / self.ratio() - shift / 2.0;
     }
 }
@@ -166,8 +169,8 @@ impl Level {
 
 const SPEED: i16 = 8;
 const H_SPEED: i16 = 8;
-const W: i16 = 800;
-const H: i16 = 1000;
+const W: i16 = 720;
+const H: i16 = 1600;
 const OPTIC_HEIGHT : i16 = 100;
 const LINE_W: i16 = 10;
 
@@ -367,9 +370,7 @@ async fn main() {
         ]
     };
 
-    let mut last = get_sec();
     let mut frame_count = 0;
-    let mut fps: u64 = 0;
     let mut last_touch = None;
     let mut screen_scale = ScreenScale::new();
 
@@ -382,6 +383,8 @@ async fn main() {
     next_frame().await;
     request_new_screen_size(screen_width(), screen_height());
     next_frame().await;
+
+    screen_scale = ScreenScale::new();
 
     draw_sun(5, &screen_scale).await;
 
@@ -475,13 +478,7 @@ async fn main() {
             });
         }
 
-        if get_sec() == last {
-            frame_count += 1;
-        } else {
-            fps = frame_count;
-            last = get_sec();
-            frame_count = 0;
-        }
+        let fps = get_fps();
 
         draw_text(fps.to_string().as_str(), 20.0, 20.0, 30.0, RED);
         draw_text(fps.to_string().as_str(), 21.0, 21.0, 30.0, GREEN);
