@@ -169,8 +169,8 @@ impl Level {
     }
 }
 
-const SPEED: i16 = 8;
-const H_SPEED: i16 = 8;
+const SPEED: i16 = 10;
+const X_SPEED: i16 = 12;
 const W: i16 = 720;
 const H: i16 = 1600;
 const OPTIC_HEIGHT : i16 = 100;
@@ -262,6 +262,77 @@ fn mk_prism (prng: &mut Xoshiro128StarStar) -> Optic {
     let x_to = x_center - w_to / 2;
 
     Optic { x_from, w_from, x_to, w_to, y: Cell::new(-OPTIC_HEIGHT) }
+}
+
+fn mk_optic_texture (
+    optic: &Optic,
+    screen: &Screen,
+) -> Texture2D {
+
+    let arr =
+        &mut [0 as u8; W as usize * OPTIC_HEIGHT as usize * 4];
+
+    for y in (0 .. OPTIC_HEIGHT) {
+        let temp_optic = &optic.get_relative(OPTIC_HEIGHT - y, OPTIC_HEIGHT);
+
+        screen.compute(temp_optic).0
+            .iter().enumerate().for_each(|(x, flag)| {
+            let shift : usize = (y as usize * W as usize + x) * 4;
+            if !*flag {
+                arr[shift] = 255;
+                arr[shift + 1] = 161;
+                arr[shift + 2] = 0;
+                arr[shift + 3] = 255;
+            } else {
+                arr[shift] = 0;
+                arr[shift + 1] = 0;
+                arr[shift + 2] = 0;
+                arr[shift + 3] = 255;
+            }
+        });
+    }
+
+    let texture = Texture2D::from_rgba8(
+        W as u16,
+        OPTIC_HEIGHT as u16,
+        arr
+    );
+    texture
+}
+
+fn texture_to_mesh(optic: &Optic, texture: &Texture2D, screen_scale: &ScreenScale) -> Mesh {
+    let y_from = screen_scale.y(optic.y.get() as f32).floor() - 2.0; // TODO: why -2.0?
+    let y_to = screen_scale.y(optic.y.get() as f32 + OPTIC_HEIGHT as f32);
+    let x_from = screen_scale.x(0.0);
+    let x_to = screen_scale.x(W as f32);
+
+    let mesh = Mesh {
+        vertices: vec![
+            macroquad::models::Vertex{
+                position: Vec3 { x: x_from, y: y_from, z: 0.0 },
+                uv: Vec2 { x: 0.0, y: 0.0 },
+                color: WHITE
+            },
+            macroquad::models::Vertex{
+                position: Vec3{ x: x_from, y: y_to, z: 0.0 },
+                uv: Vec2 { x: 0.0, y: 1.0 },
+                color: WHITE
+            },
+            macroquad::models::Vertex{
+                position: Vec3 { x: x_to, y: y_to, z: 0.0 },
+                uv: Vec2 { x: 1.0, y: 1.0 },
+                color: WHITE
+            },
+            macroquad::models::Vertex{
+                position: Vec3 { x: x_to, y: y_from, z: 0.0 },
+                uv: Vec2 { x: 1.0, y: 0.0 },
+                color: WHITE
+            },
+        ],
+        indices: vec![0,1,2,2,3,0],
+        texture: Some(texture.clone())
+    };
+    mesh
 }
 
 fn get_sec () -> u64 {
@@ -395,9 +466,16 @@ async fn main() {
     draw_sun(5, &screen_scale).await;
 
     transition_to_screen(&screen, &screen_scale, &mut prng).await;
-    let mut meshes : Vec<Mesh> = vec![];
+    // transition_to_screen(&screen, &screen_scale, &mut prng).await;
+    let mut optic_textures : Vec<Texture2D> = vec![];
+    let mut needs_mesh_redraw = true;
 
     loop {
+        if needs_mesh_redraw {
+            optic_textures = vec![];
+            needs_mesh_redraw = false;
+        }
+
         screen_scale = ScreenScale::new();
 
         level1.step();
@@ -419,112 +497,24 @@ async fn main() {
                 return (next_scr, optic.y.get(), ix + 1);
             }
 
-            let mut arr =
-                &mut [0 as u8; W as usize * OPTIC_HEIGHT as usize * 4];
-
-            // match meshes.get(ix) {
-            //     // Generate mesh
-            //     None => {
-                    for y in (0 .. OPTIC_HEIGHT) {
-                        let temp_optic = &optic.get_relative(OPTIC_HEIGHT - y, OPTIC_HEIGHT);
-                        let temp_scr = scr.compute(temp_optic);
-
-                        temp_scr.0.iter().enumerate().for_each(|(x, flag)| {
-                            let shift : usize = (y as usize * W as usize + x) * 4;
-                            if !*flag {
-                                arr[shift] = 255;
-                                arr[shift + 1] = 161;
-                                arr[shift + 2] = 0;
-                                arr[shift + 3] = 255;
-                            } else {
-                                arr[shift] = 0;
-                                arr[shift + 1] = 0;
-                                arr[shift + 2] = 0;
-                                arr[shift + 3] = 255;
-                            }
-                        });
-                    }
-
-                    let texture = Texture2D::from_rgba8(
-                        W as u16,
-                        OPTIC_HEIGHT as u16,
-                        arr
-                    );
-
-                    let y_from = screen_scale.y(optic.y.get() as f32).floor() - 2.0; // TODO: why -2.0?
-                    let y_to = screen_scale.y(optic.y.get() as f32 + OPTIC_HEIGHT as f32);
-                    let x_from = screen_scale.x(0.0);
-                    let x_to = screen_scale.x(W as f32);
-
-                    let mesh = Mesh {
-                        vertices: vec![
-                            macroquad::models::Vertex{
-                                position: Vec3 { x: x_from, y: y_from, z: 0.0 },
-                                uv: Vec2 { x: 0.0, y: 0.0 },
-                                color: WHITE
-                            },
-                            macroquad::models::Vertex{
-                                position: Vec3{ x: x_from, y: y_to, z: 0.0 },
-                                uv: Vec2 { x: 0.0, y: 1.0 },
-                                color: WHITE
-                            },
-                            macroquad::models::Vertex{
-                                position: Vec3 { x: x_to, y: y_to, z: 0.0 },
-                                uv: Vec2 { x: 1.0, y: 1.0 },
-                                color: WHITE
-                            },
-                            macroquad::models::Vertex{
-                                position: Vec3 { x: x_to, y: y_from, z: 0.0 },
-                                uv: Vec2 { x: 1.0, y: 0.0 },
-                                color: WHITE
-                            },
-                        ],
-                        indices: vec![0,1,2,2,3,0],
-                        texture: Some(texture.clone())
-                    };
-                    draw_mesh(&Mesh {
-                        vertices: vec![
-                            macroquad::models::Vertex{
-                                position: Vec3 { x: x_from, y: y_from, z: 0.0 },
-                                uv: Vec2 { x: 0.0, y: 0.0 },
-                                color: WHITE
-                            },
-                            macroquad::models::Vertex{
-                                position: Vec3{ x: x_from, y: y_to, z: 0.0 },
-                                uv: Vec2 { x: 0.0, y: 1.0 },
-                                color: WHITE
-                            },
-                            macroquad::models::Vertex{
-                                position: Vec3 { x: x_to, y: y_to, z: 0.0 },
-                                uv: Vec2 { x: 1.0, y: 1.0 },
-                                color: WHITE
-                            },
-                            macroquad::models::Vertex{
-                                position: Vec3 { x: x_to, y: y_from, z: 0.0 },
-                                uv: Vec2 { x: 1.0, y: 0.0 },
-                                color: WHITE
-                            },
-                        ],
-                        indices: vec![0,1,2,2,3,0],
-                        texture: Some(texture)
-                    });
-                    meshes.push(mesh);
-            //         // &meshes[meshes.len()-1]
-            //     }
-            //     Some(mesh) => draw_mesh(mesh)
-            // };
-
-            // draw_mesh(mesh);
-
-            // for i in (0 .. OPTIC_HEIGHT - 1).rev() {
-            //     let temp_optic = &optic.get_relative(OPTIC_HEIGHT - i, OPTIC_HEIGHT);
-            //     scr.compute(temp_optic)
-            //         .draw(
-            //             optic.y.get() + i as i16,
-            //             &screen_scale,
-            //             true
-            //         )
-            // }
+            if optic_textures.get(ix).is_some() {
+                draw_mesh(
+                    &texture_to_mesh(
+                        &optic,
+                        &optic_textures[ix],
+                        &screen_scale
+                    )
+                );
+            } else {
+                optic_textures.push(mk_optic_texture(&optic, &scr));
+                draw_mesh(
+                    &texture_to_mesh(
+                        &optic,
+                        &optic_textures[optic_textures.len() - 1],
+                        &screen_scale
+                    )
+                );
+            }
 
             let scr_next = scr.compute(&optic);
             scr_next.draw(optic.y.get(), &screen_scale, false);
@@ -550,11 +540,13 @@ async fn main() {
         // Handle <- and ->
         {
             if is_key_down(KeyCode::Right) {
-                level1.shift(H_SPEED);
+                level1.shift(X_SPEED);
+                needs_mesh_redraw = true;
             }
 
             if is_key_down(KeyCode::Left) {
-                level1.shift(-H_SPEED);
+                level1.shift(-X_SPEED);
+                needs_mesh_redraw = true;
             }
         }
 
@@ -568,6 +560,9 @@ async fn main() {
                     TouchPhase::Moved => {
                         match last_touch {
                             Some(old_pos) => {
+                                if touch.position.x - old_pos != 0.0 {
+                                    needs_mesh_redraw = true;
+                                }
                                 level1.shift((touch.position.x - old_pos) as i16);
                                 last_touch = Some(touch.position.x);
                             },
@@ -586,10 +581,12 @@ async fn main() {
         if frame_count % 30 == 0 {
             last_fps = get_fps();
         }
+
         draw_text(last_fps.to_string().as_str(), 20.0, 20.0, 30.0, RED);
 
         if needs_push {
             level1.optics.push(mk_prism(&mut prng));
+            needs_mesh_redraw = true;
         }
 
         next_frame().await
